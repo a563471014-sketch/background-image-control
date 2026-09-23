@@ -1,0 +1,126 @@
+{
+	"name": "background-image-control",
+	"displayName": "Background Image Control",
+	"description": "为 VS Code 界面设置背景图（3 步引导）：支持本地图片与网络图片，可调界面面板相对背景的不透明度、背景图透明度与模糊，一键应用 / 移除 / 彻底还原。",
+	"version": "1.2.2",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/a563471014-sketch/background-image-control"
+	},
+	"publisher": "a563471014-sketch",
+	"icon": "./icon.png",
+	"license": "MIT",
+	"keywords": [
+		"background",
+		"image",
+		"wallpaper",
+		"transparency",
+		"背景图",
+		"壁纸",
+		"透明度"
+	],
+	"engines": {
+		"vscode": "^1.90.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"extensionKind": [
+		"ui"
+	],
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"main": "./extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "backgroundImage.showMenu",
+				"title": "背景图: 打开菜单"
+			},
+			{
+				"command": "backgroundImage.setup",
+				"title": "背景图: 开始设置（3 步引导）"
+			},
+			{
+				"command": "backgroundImage.apply",
+				"title": "背景图: 应用 / 重新应用"
+			},
+			{
+				"command": "backgroundImage.remove",
+				"title": "背景图: 移除背景图"
+			},
+			{
+				"command": "backgroundImage.uninstall",
+				"title": "背景图: 彻底还原系统文件"
+			},
+			{
+				"command": "backgroundImage.increaseOpacity",
+				"title": "背景图: 提高界面不透明度"
+			},
+			{
+				"command": "backgroundImage.decreaseOpacity",
+				"title": "背景图: 降低界面不透明度"
+			},
+			{
+				"command": "backgroundImage.setOpacity",
+				"title": "背景图: 输入界面不透明度"
+			}
+		],
+		"keybindings": [
+			{
+				"command": "backgroundImage.setup",
+				"key": "ctrl+alt+i"
+			}
+		],
+		"configuration": {
+			"type": "object",
+			"title": "Background Image Control",
+			"properties": {
+				"backgroundImage.imagePath": {
+					"type": "string",
+					"default": "",
+					"description": "背景图片路径或网址（本地图片为绝对路径；网络图片会自动下载到本地缓存）。一般无需手动填写，请使用命令「背景图: 开始设置」引导完成。"
+				},
+				"backgroundImage.uiOpacity": {
+					"type": "number",
+					"default": 85,
+					"minimum": 20,
+					"maximum": 100,
+					"description": "界面整体相对背景图的不透明度 %（作用于所有面板/浮层，统一生效）：100 = 界面完全不透明（看不到背景图）；数值越低，背景图越清晰，文字可读性越低。最低 20。"
+				},
+				"backgroundImage.imageOpacity": {
+					"type": "number",
+					"default": 100,
+					"minimum": 0,
+					"maximum": 100,
+					"description": "背景图片本身的不透明度 %（100 = 图片完整显示，数值越低图片越淡）。"
+				},
+				"backgroundImage.imageStyle": {
+					"type": "string",
+					"enum": [
+						"cover",
+						"contain",
+						"tile",
+						"center"
+					],
+					"default": "cover",
+					"enumDescriptions": [
+						"铺满窗口（推荐，自动裁切）",
+						"完整显示（保持比例，可能留边）",
+						"平铺重复",
+						"居中，原始大小"
+					],
+					"description": "背景图片的填充方式。"
+				},
+				"backgroundImage.blur": {
+					"type": "number",
+					"default": 0,
+					"minimum": 0,
+					"maximum": 40,
+					"description": "背景图模糊程度（像素，0 = 不模糊）。轻微模糊可提升界面文字可读性。"
+				}
+			}
+		}
+	}
+}
