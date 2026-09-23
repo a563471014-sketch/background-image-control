@@ -2,6 +2,8 @@
 
 为 VS Code 界面设置背景图：**3 步引导，一键完成**。整个界面统一半透明，背景图静默透出，让代码窗口看起来像一张壁纸。
 
+## 效果预览（界面不透明度 60% · 主题 GitHub Dark · 蓝色壁纸）
+
 ![效果预览](https://raw.githubusercontent.com/a563471014-sketch/background-image-control/master/extension/preview.png)
 
 ## 功能特性

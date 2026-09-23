@@ -8,7 +8,7 @@
 - 状态栏快捷菜单 + 快捷键 `Ctrl+Alt+I`
 - 自动修复 VS Code 升级后失效；可一键彻底还原系统文件
 
-## 效果预览（界面不透明度 75% · Light 2026 主题）
+## 效果预览（界面不透明度 60% · 主题 GitHub Dark · 蓝色壁纸）
 
 ![效果预览](https://raw.githubusercontent.com/a563471014-sketch/background-image-control/master/extension/preview.png)
 
