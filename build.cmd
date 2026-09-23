@@ -4,7 +4,7 @@ rem NOTE: bump VER together with extension\package.json version and vsix\extensi
 rem Pack uses pack.ps1 (PowerShell ZipArchive) because tar treats [Content_Types].xml as a glob pattern
 setlocal
 cd /d "%~dp0"
-set VER=1.2.3
+set VER=1.3.0
 
 if not exist dist mkdir dist
 powershell -NoProfile -ExecutionPolicy Bypass -File pack.ps1 -Version %VER%

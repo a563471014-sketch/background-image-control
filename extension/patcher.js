@@ -31,14 +31,15 @@ function checksumKey(htmlRel) {
     return htmlRel.replace(/^out\//, '');
 }
 
-// 读取注入状态：{ supported, injected, cssHref }
+// 读取注入状态：{ supported, injected, cssHref, hasScript }
 function readState(loc) {
     try {
         const text = fs.readFileSync(loc.htmlPath, 'utf8');
         const m = text.match(new RegExp(`<!-- ${MARKER}:start -->([\\s\\S]*?)<!-- ${MARKER}:end -->`));
         if (!m) return { supported: true, injected: false };
-        const href = m[1].match(/href="([^"]+)"/);
-        return { supported: true, injected: true, cssHref: href ? href[1] : undefined };
+        const href = m[1].match(/<link[^>]+href="([^"]+)"/);
+        const hasScript = /bg-inject\.js/i.test(m[1]);
+        return { supported: true, injected: true, cssHref: href ? href[1] : undefined, hasScript };
     } catch (e) {
         return { supported: false, injected: false, error: e.message };
     }
@@ -54,7 +55,8 @@ const APPLY_PS1 = `param(
   [Parameter(Mandatory=$true)][string]$Html,
   [string]$Prod,
   [string]$Key,
-  [string]$CssHref
+  [string]$CssHref,
+  [string]$InjectHref
 )
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $ErrorActionPreference = 'Stop'
@@ -106,7 +108,9 @@ $changed = $false
 
 if ($Mode -eq 'apply') {
   if (-not $CssHref) { Write-Output 'ERROR: CssHref required for apply'; exit 1 }
-  $block = '<!-- ' + $Marker + ':start -->' + "\`r\`n" + '<link rel="stylesheet" href="' + $CssHref + '">' + "\`r\`n" + '<!-- ' + $Marker + ':end -->' + "\`r\`n"
+  $block = '<!-- ' + $Marker + ':start -->' + "\`r\`n" + '<link rel="stylesheet" href="' + $CssHref + '">' + "\`r\`n"
+  if ($InjectHref) { $block += '<script src="' + $InjectHref + '" defer></script>' + "\`r\`n" }
+  $block += '<!-- ' + $Marker + ':end -->' + "\`r\`n"
   $i = $out.IndexOf('</head>')
   if ($i -lt 0) { $i = $out.IndexOf('</html>') }
   if ($i -lt 0) { Write-Output 'ERROR: no </head> or </html> found'; exit 1 }
@@ -157,13 +161,15 @@ const ELEVATE_PS1 = `param(
   [Parameter(Mandatory=$true)][string]$Html,
   [string]$Prod,
   [string]$Key,
-  [string]$CssHref
+  [string]$CssHref,
+  [string]$InjectHref
 )
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $argLine = '-NoProfile -ExecutionPolicy Bypass -File "' + $Script + '" -Mode ' + $Mode + ' -Html "' + $Html + '"'
 if ($Prod)    { $argLine += ' -Prod "' + $Prod + '"' }
 if ($Key)     { $argLine += ' -Key "' + $Key + '"' }
 if ($CssHref) { $argLine += ' -CssHref "' + $CssHref + '"' }
+if ($InjectHref) { $argLine += ' -InjectHref "' + $InjectHref + '"' }
 try {
   $p = Start-Process -FilePath 'powershell' -ArgumentList $argLine -Verb RunAs -Wait -PassThru
   exit $p.ExitCode
@@ -204,6 +210,7 @@ async function run(scriptsDir, mode, args, log, options) {
         '-Key', args.key || ''
     ];
     if (args.cssHref) base.push('-CssHref', args.cssHref);
+    if (args.injectHref) base.push('-InjectHref', args.injectHref);
 
     if (log) log(`run apply.ps1 ${mode}`);
     let r = await powershell(base);
@@ -221,6 +228,7 @@ async function run(scriptsDir, mode, args, log, options) {
         if (args.prod) elevArgs.push('-Prod', args.prod);
         if (args.key) elevArgs.push('-Key', args.key);
         if (args.cssHref) elevArgs.push('-CssHref', args.cssHref);
+        if (args.injectHref) elevArgs.push('-InjectHref', args.injectHref);
         const e = await powershell(elevArgs);
         if (e.code === 0) return { ok: true, elevated: true, output: e.stdout };
         if (e.code === 3) return { ok: false, canceled: true, message: '已取消管理员授权' };
@@ -229,12 +237,13 @@ async function run(scriptsDir, mode, args, log, options) {
     return { ok: false, message: (r.stdout + r.stderr).trim() || ('exit code ' + r.code) };
 }
 
-function apply(loc, cssHref, scriptsDir, log, options) {
+function apply(loc, cssHref, injectHref, scriptsDir, log, options) {
     return run(scriptsDir, 'apply', {
         html: loc.htmlPath,
         prod: loc.productPath,
         key: checksumKey(loc.htmlRel),
-        cssHref
+        cssHref,
+        injectHref
     }, log, options);
 }
 

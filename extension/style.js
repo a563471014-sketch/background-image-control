@@ -39,29 +39,30 @@ function buildCss({ imageUrl, uiOpacity, imageOpacity, imageStyle, blur }) {
     const imgAlpha = clamp(imageOpacity, 0, 100);
     const bl = clamp(blur, 0, 40);
     const [size, pos, repeat] = IMAGE_STYLES[imageStyle] || IMAGE_STYLES.cover;
+    const inset = bl > 0 ? -Math.ceil(bl * 3) : 0;
     const L = [];
 
-    L.push('/* background-image-control — 自动生成，请勿手工修改（在扩展设置/菜单中调整即可） */');
+    L.push('/* background-image-control — 自动生成；运行时由 bg-inject.js 通过 CSS 变量实时覆写（无需重载） */');
     L.push('');
-    L.push('/* 背景图层 */');
+    L.push('/* 背景图层（--bgc-* 变量可被页面脚本实时覆写） */');
     L.push('body::before {');
     L.push("  content: '' !important;");
     L.push('  position: fixed !important;');
-    // 模糊会带来半透明边缘，放大一点避免露边
-    L.push(bl > 0 ? `  inset: -${Math.ceil(bl * 3)}px !important;` : '  inset: 0 !important;');
+    // 模糊会带来半透明边缘，放大一点避免露边（模糊值可实时变化）
+    L.push(`  inset: var(--bgc-inset, ${inset}px) !important;`);
     L.push('  pointer-events: none !important;');
-    L.push(`  background-image: url("${imageUrl}") !important;`);
-    L.push(`  background-size: ${size} !important;`);
-    L.push(`  background-position: ${pos} !important;`);
-    L.push(`  background-repeat: ${repeat} !important;`);
-    if (imgAlpha < 100) L.push(`  opacity: ${(imgAlpha / 100).toFixed(3)} !important;`);
-    if (bl > 0) L.push(`  filter: blur(${bl}px) !important;`);
+    L.push(`  background-image: var(--bgc-image, url("${imageUrl}")) !important;`);
+    L.push(`  background-size: var(--bgc-size, ${size}) !important;`);
+    L.push(`  background-position: var(--bgc-position, ${pos}) !important;`);
+    L.push(`  background-repeat: var(--bgc-repeat, ${repeat}) !important;`);
+    L.push(`  opacity: var(--bgc-image-opacity, ${(imgAlpha / 100).toFixed(3)}) !important;`);
+    L.push(`  filter: var(--bgc-filter, ${bl > 0 ? `blur(${bl}px)` : 'none'}) !important;`);
     L.push('  z-index: 0 !important;');
     L.push('}');
 
     L.push('');
-    L.push(`/* 界面整体不透明度 ${alpha}%：一整层作用于所有面板/浮层/菜单（与窗口透明度同思路，不再逐面板选择器） */`);
-    L.push(`:root body .monaco-workbench { opacity: ${(alpha / 100).toFixed(3)} !important; }`);
+    L.push(`/* 界面整体不透明度（默认 ${alpha}%；--bgc-ui-opacity 由页面脚本实时覆写） */`);
+    L.push(`:root body .monaco-workbench { opacity: var(--bgc-ui-opacity, ${(alpha / 100).toFixed(3)}) !important; }`);
 
     return L.join('\r\n') + '\r\n';
 }

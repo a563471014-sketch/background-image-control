@@ -12,6 +12,7 @@ const IS_WIN = process.platform === 'win32';
 
 let ctx, statusBar, output, busy = false;
 let cfgTimer, lastReloadPrompt = 0;
+let lastImageUrl;
 
 const cfg = () => vscode.workspace.getConfiguration(CONFIG);
 const log = msg => { if (output) output.appendLine('[' + new Date().toLocaleTimeString() + '] ' + msg); };
@@ -22,9 +23,26 @@ const assetsDir = () => path.join(path.dirname(ctx.extensionUri.fsPath), 'backgr
 const cssFile = () => path.join(assetsDir(), 'bg.css');
 const scriptsDir = () => path.join(storageRoot(), 'scripts');
 const cssHref = () => style.vscodeFileUrlOf(cssFile());
+const injectFile = () => path.join(assetsDir(), 'bg-inject.js');
+const injectHref = () => style.vscodeFileUrlOf(injectFile());
 const locateApp = () => patcher.locate(vscode.env.appRoot);
-const patchActive = st => !!(st && st.injected && st.cssHref && st.cssHref.toLowerCase() === cssHref().toLowerCase());
 const sameHref = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+const patchActive = st => !!(st && st.injected && st.hasScript && sameHref(st.cssHref, cssHref()));
+
+// 把页面实时注入器（inject.js）复制到资产目录（内容变化时自动更新）
+function ensureInjector() {
+    try {
+        const want = fs.readFileSync(path.join(ctx.extensionUri.fsPath, 'inject.js'), 'utf8');
+        let have = '';
+        try { have = fs.readFileSync(injectFile(), 'utf8'); } catch { /* ignore */ }
+        if (have !== want) {
+            fs.writeFileSync(injectFile(), want, 'utf8');
+            log('injector updated');
+        }
+    } catch (e) {
+        log('injector: ' + e.message);
+    }
+}
 
 // ---------- 公共 ----------
 
@@ -40,7 +58,24 @@ function refreshStatus() {
             ? `$(file-media) 背景图: ${cfg().get('uiOpacity')}%`
             : '$(file-media) 背景图: 待应用';
     }
-    statusBar.tooltip = '点击打开背景图菜单';
+    // tooltip 会渲染进状态栏项的 aria-label —— 页面注入器（bg-inject.js）借此实时获取配置
+    let payload;
+    if (!src) {
+        payload = '{"e":0}';
+    } else if (lastImageUrl) {
+        const st2 = style.IMAGE_STYLES[cfg().get('imageStyle', 'cover')] || style.IMAGE_STYLES.cover;
+        const bl = Number(cfg().get('blur', 0)) || 0;
+        payload = JSON.stringify({
+            e: 1,
+            o: Number(cfg().get('uiOpacity', 85)),
+            i: lastImageUrl,
+            io: Number(cfg().get('imageOpacity', 100)),
+            b: bl,
+            inset: bl > 0 ? -Math.ceil(bl * 3) : 0,
+            s: st2
+        });
+    }
+    statusBar.tooltip = '点击打开背景图菜单' + (payload ? ' | bgc:' + payload : '');
     statusBar.show();
 }
 
@@ -56,12 +91,15 @@ async function promptReload(message) {
 // 依当前配置生成 CSS（会解析/下载图片）
 async function writeCssForCurrentConfig() {
     fs.mkdirSync(assetsDir(), { recursive: true });
+    ensureInjector();
     const src = cfg().get('imagePath');
     if (!src) {
         fs.writeFileSync(cssFile(), style.emptyCss(), 'utf8');
+        lastImageUrl = undefined;
         return undefined;
     }
     const imageUrl = await style.resolveImageUrl(storageRoot(), src, log);
+    lastImageUrl = imageUrl;
     const css = style.buildCss({
         imageUrl,
         uiOpacity: cfg().get('uiOpacity', 85),
@@ -77,20 +115,13 @@ async function writeCssForCurrentConfig() {
 function scheduleConfigRefresh() {
     clearTimeout(cfgTimer);
     cfgTimer = setTimeout(async () => {
-        let failed = false;
         try {
             await writeCssForCurrentConfig();
         } catch (e) {
-            failed = true;
             vscode.window.showWarningMessage('背景图更新失败：' + e.message);
         }
+        // 配置变化会经状态栏 tooltip 实时广播给页面注入器（bg-inject.js）—— 无需重载窗口
         refreshStatus();
-        if (failed || busy) return;
-        const loc = locateApp();
-        const st = loc ? patcher.readState(loc) : undefined;
-        if (st && st.injected) {
-            promptReload(cfg().get('imagePath') ? '设置已更新。重载窗口后生效。' : '背景图已移除。重载窗口后生效。');
-        }
     }, 400);
 }
 
@@ -152,7 +183,7 @@ async function applyFlow() {
                 return;
             }
             progress.report({ message: '正在修改界面文件…（若弹出管理员权限请求请选择「是」）' });
-            const r = await patcher.apply(loc, cssHref(), scriptsDir(), log);
+            const r = await patcher.apply(loc, cssHref(), injectHref(), scriptsDir(), log);
             if (r.ok) {
                 applied = true;
                 log('apply ok, elevated=' + !!r.elevated);
@@ -167,7 +198,7 @@ async function applyFlow() {
         });
         if (applied) {
             try { await ensureControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
-            promptReload('背景图已应用（窗口按钮样式同步切换）。重载窗口后生效。');
+            promptReload('背景图已应用。首次需重载窗口生效；之后改透明度 / 换图 / 移除均即时生效。');
         }
     } finally {
         busy = false;
@@ -183,13 +214,7 @@ async function removeFlow() {
     await cfg().update('imagePath', '', vscode.ConfigurationTarget.Global);
     try { await restoreControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
     refreshStatus();
-    const loc = locateApp();
-    const st = loc ? patcher.readState(loc) : undefined;
-    if (st && st.injected) {
-        promptReload('已移除背景图，重载窗口后生效。\n如需彻底还原系统文件（卸载扩展前），请运行命令「背景图：彻底还原系统文件」。');
-    } else {
-        vscode.window.showInformationMessage('已移除背景图。');
-    }
+    vscode.window.showInformationMessage('已移除背景图（即时生效，无需重载）。\n如需彻底还原系统文件（卸载扩展前），请运行命令「背景图：彻底还原系统文件」。');
 }
 
 async function uninstallFlow() {
@@ -413,9 +438,9 @@ async function startupChecks() {
     const loc = locateApp();
     if (!loc) { refreshStatus(); return; }
     const st = patcher.readState(loc);
-    if (!st.injected || !sameHref(st.cssHref, cssHref())) {
-        // 尝试静默自动恢复（无需管理员权限时）
-        const r = await patcher.apply(loc, cssHref(), scriptsDir(), log, { allowElevation: false });
+    if (!st.injected || !st.hasScript || !sameHref(st.cssHref, cssHref())) {
+        // 尝试静默自动恢复（无需管理员权限时；旧版注入会自动补齐实时注入器）
+        const r = await patcher.apply(loc, cssHref(), injectHref(), scriptsDir(), log, { allowElevation: false });
         if (r.ok) {
             try { await ensureControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
             promptReload('背景图已自动恢复（检测到 VS Code 界面文件变化）。重载窗口后生效。');
