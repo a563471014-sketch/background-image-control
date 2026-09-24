@@ -439,23 +439,38 @@ async function startupChecks() {
     if (!loc) { refreshStatus(); return; }
     const st = patcher.readState(loc);
     if (!st.injected || !st.hasScript || !sameHref(st.cssHref, cssHref())) {
-        // 尝试静默自动恢复（无需管理员权限时；旧版注入会自动补齐实时注入器）
-        const r = await patcher.apply(loc, cssHref(), injectHref(), scriptsDir(), log, { allowElevation: false });
-        if (r.ok) {
-            try { await ensureControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
-            promptReload('背景图已自动恢复（检测到 VS Code 界面文件变化）。重载窗口后生效。');
-        } else if (r.needElevation && !ctx.globalState.get('patchNoticeShown')) {
-            await ctx.globalState.update('patchNoticeShown', true);
-            const pick = await vscode.window.showInformationMessage('背景图需要重新应用（需要管理员权限）。', '重新应用');
-            if (pick) await applyFlow();
-        } else {
-            log('patch check: ' + JSON.stringify(r));
-        }
+        // 延迟自动恢复（30 秒），详见 autoRepair 注释：避免与 VS Code 启动时的安装完整性
+        // 校验交错导致误报“{安装} 似乎损坏”（校验读启动快照里的 checksums，对不上新写入的文件即弹窗）
+        setTimeout(() => { autoRepair(loc).catch(e => log('auto repair: ' + (e && e.message || e))); }, 30000);
     } else {
         // 已生效：确保窗口按钮样式也已切换（如从旧版本升级后自动补齐）
         try { await ensureControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
     }
     refreshStatus();
+}
+
+// 延迟自动恢复：在窗口启动约 30 秒后（VS Code 的安装完整性校验已跑完）再执行写入。
+// 原因：workbench 的 IntegrityService 启动时会拿 product.json 的 checksums（启动快照）
+// 与磁盘文件逐个对比；若我们在快照生成后、校验执行前就改写了 workbench.html，
+// 校验会误判“安装似乎损坏”（弹窗 + 建议重装）。推迟到校验之后写入即可彻底避免。
+async function autoRepair(loc) {
+    const st = patcher.readState(loc);
+    if (patchActive(st)) {
+        try { await ensureControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
+        return;
+    }
+    const r = await patcher.apply(loc, cssHref(), injectHref(), scriptsDir(), log, { allowElevation: false });
+    if (r.ok) {
+        log('auto repair ok (deferred)');
+        try { await ensureControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
+        promptReload('背景图已自动恢复（检测到 VS Code 界面文件变化）。重载窗口后生效。');
+    } else if (r.needElevation && !ctx.globalState.get('patchNoticeShown')) {
+        await ctx.globalState.update('patchNoticeShown', true);
+        const pick = await vscode.window.showInformationMessage('背景图需要重新应用（需要管理员权限）。', '重新应用');
+        if (pick) await applyFlow();
+    } else {
+        log('patch check(deferred): ' + JSON.stringify(r));
+    }
 }
 
 // ---------- 激活 ----------
