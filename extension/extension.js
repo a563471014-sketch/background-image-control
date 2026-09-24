@@ -439,9 +439,9 @@ async function startupChecks() {
     if (!loc) { refreshStatus(); return; }
     const st = patcher.readState(loc);
     if (!st.injected || !st.hasScript || !sameHref(st.cssHref, cssHref())) {
-        // 延迟自动恢复（10 秒；实测启动完整性校验在 +4~6.5s 内完成，10s 有 2 倍以上裕量），
-        // 详见 autoRepair 注释：避免与校验交错导致误报“{安装} 似乎损坏”
-        setTimeout(() => { autoRepair(loc).catch(e => log('auto repair: ' + (e && e.message || e))); }, 10000);
+        // 延迟自动恢复（20 秒）：校验耗时与机器性能/启动负载相关（实测轻负载下约 +4~6.5s 完成），
+        // 取 20s 留足裕量，详见 autoRepair 注释：避免与校验交错导致误报“{安装} 似乎损坏”
+        setTimeout(() => { autoRepair(loc).catch(e => log('auto repair: ' + (e && e.message || e))); }, 20000);
     } else {
         // 已生效：确保窗口按钮样式也已切换（如从旧版本升级后自动补齐）
         try { await ensureControlsStyle(); } catch (e) { log('controlsStyle: ' + e.message); }
@@ -449,7 +449,7 @@ async function startupChecks() {
     refreshStatus();
 }
 
-// 延迟自动恢复：在窗口启动约 10 秒后（VS Code 的安装完整性校验已跑完）再执行写入。
+// 延迟自动恢复：在窗口启动约 20 秒后（VS Code 的安装完整性校验已跑完）再执行写入。
 // 原因：workbench 的 IntegrityService 启动时会拿 product.json 的 checksums（启动快照）
 // 与磁盘文件逐个对比；若我们在快照生成后、校验执行前就改写了 workbench.html，
 // 校验会误判“安装似乎损坏”（弹窗 + 建议重装）。推迟到校验之后写入即可彻底避免。
